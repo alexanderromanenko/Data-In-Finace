@@ -1,0 +1,359 @@
+---
+title: "Finance Assignment 3"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+#loading libraries
+library(hydroGOF)
+library(lattice)
+library(ggplot2)
+library(caret)
+library(reshape)
+library(hydroGOF)
+library(ggplot2)
+library(reshape2)
+library(glmnet)
+library(leaps)
+library(MASS)
+library(class)
+```
+
+```{r loading dataset}
+#loading dataset
+setwd("~/AR/Imperial/Modules/5.1 Big Data in Finance/Assignments/Assignment 3 - Imperial files")
+data<- read.table("Data1.csv", sep=",", header= TRUE, row.names = "Date")
+```
+
+```{r historic mean}
+#calculating a historic mean
+hist.mean<- data.frame(row.names=1:(nrow(data)-80))
+
+for (ind in 1:49) {
+  for (i in 1:(nrow(data)-81)) {
+    pred <- mean(data[i:(i+79),ind])
+    act <- data[i+80,ind]
+    mse.temp <- mse(pred,act)
+    hist.mean[i,ind] <- sqrt(mse.temp)   
+  }
+}
+
+write.csv(hist.mean, "hist_mean.csv")
+```
+
+```{r RMSE is and oos for all industries}
+#calculating RMSE IS and OOS for all industries
+
+rmse.is.all <- data.frame(row.names = 1:443)
+rmse.oos.all <- data.frame(row.names = 1:443)
+for (a in 1:49){
+  temp <- data
+  temp["target"]<- temp[a]
+
+  for (i in 1:nrow(temp)-1){
+    temp[i,50] <- temp[i+1,50]
+  }
+  temp<- temp[1:(nrow(data)-1),]
+
+  #RMSE and SSE in-sample
+  for (i in 1:(nrow(temp)-80)) {
+    reg <- lm(target~.,temp[i:(i+79),])  
+    rmse.is.all[i,a]<- (summary(reg)[6])
+  } 
+
+  #RMSE and SSE out of sample
+  for (k in 1:(nrow(temp)-80)) {
+    reg <- lm(target~.,temp[k:(k+79),])  
+    pred<- predict.lm(reg,temp[(k+80),])  
+    act<- temp[(k+80),50]
+    rmse1 <- sqrt(mse(pred,act))
+    rmse.oos.all[k,a] <- rmse1
+  } 
+}
+
+write.csv(rmse.oos.all, "OLS OOS.csv")
+write.csv(rmse.is.all, "OLS IS.csv")
+
+#calculation of means
+oos<-rmse.oos.all
+is<-rmse.is.all
+is$mean<-rowMeans(is)
+oos$mean<-rowMeans(oos)
+```
+
+```{r- lasso cv- all NEW}
+#making prediction using lasso through cross validation
+rmse.lasso.oos <- data.frame(row.names = 1:(nrow(data)-82))
+lambda.range <- 10^seq(0, -4.5, length = 100)
+lambda.all <- data.frame(row.names=lambda.range)
+lambda.rmse.average <- data.frame(row.names= 1:(nrow(data)-82))
+
+for (i in 1:(nrow(data)-82)) {
+  print(i)
+  check2 <-1
+  for (j in seq(50, 80, 4)){
+    check1 <-1
+    lasso.model <- glmnet(x = as.matrix(data[i:(i+j), -1]), y = (data[(i+1):(i+j+1), 48]), alpha = 1)
+    for (k in lambda.range) {
+      pred.lasso <- as.numeric(predict (lasso.model, newx= as.matrix (data[(i+j+1), -1]) , type = "response", s = k))
+      actuals<- data[(i+1), 2]
+      lambda.all[check1, check2] <- sqrt(mse(actuals , pred.lasso))
+      check1 <- check1 +1
+      }
+    check2 <- check2 + 1
+  }
+  lambda.all$Mean <- rowMeans(lambda.all)
+  lambda.rmse.average[i, 1] <- row.names(lambda.all[which(lambda.all$Mean == min(lambda.all$Mean)), ])[1]
+  }
+for (i in 1:442) {
+  lasso.model <- glmnet(x = as.matrix (data[i:(i+79),-1]), y = (data[(i+1):(i+80), 48]), alpha = 1, nlambda= 50)
+  pred.lasso <- as.numeric(predict(lasso.model, newx= as.matrix(data[(i+81), -1]), type = "response", 
+                                       s = as.numeric(lambda.rmse.average[i, 1]) ))
+  actuals<- data[(i+82), 48]
+  real_mse <- sqrt(mse(actuals, pred.lasso))
+  rmse.lasso.oos[i, 1] <- real_mse    
+}
+
+write.csv(rmse.lasso.oos, file="RMSE_Lasso_oos_new.csv")
+
+```
+
+```{r- ridge cv- all NEW}
+#making prediction using Ridge regression through cross validation
+rmse.ridge.oos <- data.frame(row.names = 1:(nrow(data)-82))
+lambda.range <- 10^seq(0, -4.5, length = 100)
+lambda.all <- data.frame(row.names=lambda.range)
+lambda.rmse.average <- data.frame(row.names= 1:(nrow(data)-82))
+
+for (i in 1:(nrow(data)-82)) {
+  print(i)
+  check2 <-1
+  for (j in seq(50, 80, 4)){
+    check1 <-1
+    ridge.model <- glmnet(x = as.matrix(data[i:(i+j), -1]), y = (data[(i+1):(i+j+1), 48]), alpha = 0, nlambda= 50)
+    for (k in lambda.range) {
+      pred.ridge <- as.numeric(predict (ridge.model, newx= as.matrix (data[(i+j+1), -1]) , type = "response", s = k))
+      actuals<- data[(i+1), 2]
+      lambda.all[check1, check2] <- sqrt(mse(actuals , pred.ridge))
+      check1 <- check1 +1
+      }
+    check2 <- check2 + 1
+  }
+  lambda.all$Mean <- rowMeans(lambda.all)
+  lambda.rmse.average[i, 1] <- row.names(lambda.all[which(lambda.all$Mean == min(lambda.all$Mean)), ])[1]
+  }
+
+for (i in 1:442) {
+  ridge.model <- glmnet(x = as.matrix (data[i:(i+79),-1]), y = (data[(i+1):(i+80), 48]), alpha = 0, nlambda= 50)
+    
+  pred.ridge <- as.numeric(predict(ridge.model, newx= as.matrix(data[(i+81), -1]), type = "response", 
+                                       s = as.numeric(lambda.rmse.average[i, 1]) ))
+  actuals<- data[(i+82), 48]
+  real_mse <- sqrt(mse(actuals, pred.ridge))
+  rmse.ridge.oos[i, 1] <- real_mse    
+}
+
+write.csv(rmse.ridge.oos, file="RMSE_ridge_oos_new.csv")
+```
+
+``` {r Elastic net}
+#making prediction using Elastic Net through cross validation- Only for Bus Services (ind 34)
+rmse.enet.oos <- data.frame(row.names = 1:(nrow(data)-82))
+coefficients.enet <- data.frame(row.names = colnames(data))
+lambda.range <- 10^seq(0, -4.5, length = 100)
+
+alpha.range <- seq(0, 1, length = 5)
+
+trnCrtl = trainControl(method = "timeslice", initialWindow = 50, fixedWindow = F, horizon = 1)
+
+srchrange = expand.grid(.alpha = alpha.range, .lambda = lambda.range)
+
+#finding industries/parameters which LAsso selected (non-zero)
+for (i in 1:(nrow(data)-82)) {
+  my.train <- train(x = as.matrix (data[i:(i+79),-1]), y = data[(i+1):(i+80), 34], method = "glmnet", tuneGrid = srchrange, trControl = trnCrtl, standardize = T, maxit = 1000000)
+  my.glmnet.model <- my.train$finalModel
+  coefficients.enet[, i] <- coef(my.glmnet.model, s = my.train$bestTune$lambda)[,1]
+  pred.enet <- as.numeric(predict(my.glmnet.model, newx= as.matrix(data[(i+81), -1]), type = "response", 
+                                       s = as.numeric(my.train$bestTune$lambda )))
+  actuals<- data[(i+82), 34]
+  real_mse <- sqrt(mse(actuals, pred.enet))
+  rmse.enet.oos[i, 1] <- real_mse 
+  print(i)
+}
+
+write.csv(rmse.enet.oos, file = "RMSE_Enet_oos.csv")
+write.csv(coefficients.enet, file="Coef_enet.csv")
+```
+
+
+``` {r logistic dataframe}
+data2<-data
+data2[,"dir"]<-0
+colnames(data2[34])
+
+for (i in 1:(nrow(data2)-1)) {
+  if (data[i+1,34] > 0) {
+    data2[i,50]<- 1
+  }
+}
+
+#simple logistic regression
+glm.fit= glm (dir ~., data2, family=binomial)
+summary(glm.fit)
+
+glm.probs= predict(glm.fit, type="response")
+
+glm.pred <- rep(0,514)
+glm.pred [glm.probs>.5]<-1
+
+table (glm.pred, data2[,50])
+mean (glm.pred[1:514] == data2[1:514,50])
+#60.50% is
+
+
+#standard logistic regression
+rmse.is.log <- data.frame(row.names = 1:(nrow(data2)-122))
+
+for (k in 1:(nrow(data2)-122)) {
+  glm.fit <- glm(dir~.,data2[k:(k+119),], family = binomial)  
+  pred<- predict(glm.fit,data2[(k+120),], type="response")  
+  if (pred>0.5){
+    pred <- 1
+  }
+  else {pred<-0}
+  #act<- data2[(k+120),50]
+  #rmse1 <- sqrt(mse(pred,act))
+  rmse.is.log[k,1] <- pred
+} 
+#rmse.oos.all$mean<-rowMeans(rmse.oos.all)
+
+table(rmse.is.log[,1], data2[121:(nrow(data)-2),50])
+log.reg.acc <-mean (rmse.is.log[,1]== data2[121:(nrow(data)-2),50])
+#49.50% oos
+
+
+# linear discriminant analysis
+lda.fit <- lda (dir ~., data2)
+lda.pred = predict (lda.fit, data2)
+lda.class = lda.pred$class  
+table (lda.class, data2[,50])
+mean (lda.class == data2[,50]) 
+#60.88% is
+
+#quadratic discriminant analysis
+qda.fit <- qda (dir ~., data2)
+qda.class = predict (qda.fit, data2)$class
+
+table (qda.class, data2[,50])
+mean (qda.class == data2[,50]) 
+#89.12% is
+
+
+#lda oos2
+w=400  #training sample
+lda.fit <- lda(dir~.,data2[1:w,])  
+pred<- predict(lda.fit,data2[(w+1):524,])$class  
+
+table(pred, data2[(w+1):524,50])
+mean (pred== data2[(w+1):524,50])
+#51.61% oos- 57% accuracy for up
+
+
+#qda oos2
+w=400  #training sample
+qda.fit <- qda(dir~.,data2[1:w,])  
+pred<- predict(qda.fit,data2[(w+1):524,])$class  
+
+table(pred, data2[(w+1):524,50])
+mean (pred== data2[(w+1):524,50])
+#52.4% oos- 
+
+
+#k-nearest neighbour
+
+#w=400  #training sample
+train.X <- data2[,-50]
+test.X <- data2[,-50]
+train.dir<- data2$dir
+
+knn.pred=knn(train.X, test.X, train.dir, k=25)
+#table (knn.pred,data2[(w+1):524,50])
+mean (knn.pred==data2[,50])
+#62.01% is
+
+
+w=400  #training sample
+train.X <- data2[1:w,-50]
+test.X <- data2[(w+1):524,-50]
+train.dir<- data2$dir[1:w]
+
+knn.pred=knn(train.X, test.X, train.dir, k=50)
+table (knn.pred,data2[(w+1):524,50])
+mean (knn.pred==data2[(w+1):524,50])
+#57.2 oos
+
+#testing
+for (k in (1:200)){
+  w=350  #training sample
+  train.X <- data2[1:w,-50]
+  test.X <- data2[(w+1):440,-50]
+  train.dir<- data2$dir[1:w]
+  
+  knn.pred=knn(train.X, test.X, train.dir, k=k)
+  #table (knn.pred,data2[(w+1):524,50])
+  acc<- mean (knn.pred==data2[(w+1):440,50])
+  print(c(acc,k))
+#63.3% with k=80 
+}
+#validating
+w=440  #training sample
+train.X <- data2[1:w,-50]
+test.X <- data2[(w+1):524,-50]
+train.dir<- data2$dir[1:w]
+
+knn.pred=knn(train.X, test.X, train.dir, k=80)
+table (knn.pred,data2[(w+1):524,50])
+mean (knn.pred==data2[(w+1):524,50])
+#57.2 oos
+
+```
+
+``` {r logistic dataframe with extra 10 lagged days}
+data2<-data
+data2[,"dir"]<-0
+colnames(data2[34])
+
+for (i in 1:(nrow(data2)-1)) {
+  if (data[i+1,34] > 0) {
+    data2[i,50]<- 1
+  }
+}
+
+for (i in 1:nrow(data2)){
+  for (j in 1:20){
+    if (j<i+1) {
+        data2[i,(50+j)] <- data2[(i-j+1),34] #creating lags
+        names(data2)[50+j] <- paste("lag", j)
+    }
+  }
+}
+data2 <- data2[20:nrow(data2),]
+#new dataframe 505 rows, 70 columns 
+
+
+#simple logistic regression
+glm.fit= glm (dir ~., data2, family=binomial)
+glm.probs= predict(glm.fit, type="response")
+glm.pred <- rep(0,505)
+glm.pred [glm.probs>.5]<-1
+table (glm.pred, data2[,50])
+mean (glm.pred[1:505] == data2[1:505,50])
+#64.16lag vs  #60.50% is
+#lag15 has high significance of 99%
+```
+
+
