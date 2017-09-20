@@ -1,1 +1,5 @@
-# Data-In-Finace
+# Use of data analytics and machine learning for prediction and classification of daily returns of industry portfolios
+
+The report (and accompanying code) demonstrate and assess potential use of machine learning techniques and data analytics algorithms in Finance for the purpose of prediction and classification of daily returns of industry portfolios. The report starts with analysis of the given dataset and goes on to describe the methods, which will be used for predictions. In particular, it discusses potential applications of Linear Regression, LASSO, Ridge Regression and Elastic Net. The discussion moves on to methods, such as Linear Discriminant Analysis, Quadratic Discriminant Analysis, Logistic Regression and K- Nearest Neighbour. The report also shows and assess the results of the analysis for the chosen techniques. Finally, the report provides suggestion for potential areas of future research in the area and concludes with a summary of the analysis.
+
+Results demonstrated that Ridge Regression and LASSO have performed only slightly worse than the benchmark with the Elastic Net approach showing signs of outperforming it. Similarly KNN method showed decent performance, which should be re-tested with more data.
